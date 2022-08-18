@@ -235,7 +235,7 @@ def render_rays(models,
                 noise_std=0.0,
                 N_importance=0,
                 chunk=1024*32,
-                white_back=False
+                white_back=True
                 ):
 
         def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, idx_render):
@@ -262,11 +262,11 @@ def render_rays(models,
             deg = 2
             rgb = eval_sh(deg=deg, sh=sh.reshape(-1, 3, (deg + 1)**2), dirs=view_dir)
             rgb = torch.sigmoid(rgb)
-            out = torch.cat([sigma, rgb, sh], dim=1)
+            out = torch.cat([sigma, rgb, sh], dim=-1)
            
             out_rgb = torch.full((N_rays, N_samples_, 3), 1.0, device=device)
             out_sigma = torch.full((N_rays, N_samples_, 1), system_dict['sigma_default'], device=device)
-            out_sh = torch.full((N_rays, N_samples_, system_dict['dim_sh']), 0.0, device=device)
+            out_sh = torch.full((N_rays, N_samples_, system_dict['dim_sh']), -5.0, device=device)
             out_defaults = torch.cat([out_sigma, out_rgb, out_sh], dim=2)
             out_defaults[idx_render[:, 0], idx_render[:, 1]] = out
             out = out_defaults
@@ -277,7 +277,7 @@ def render_rays(models,
                     
             # Convert these values using volume rendering (Section 4)
             deltas = z_vals[:, 1:] - z_vals[:, :-1] # (N_rays, N_samples_-1)
-            delta_inf = 1e10 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
+            delta_inf = 1e5 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
             deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
             
             weights, alphas = sigma2weights(deltas, sigmas)
@@ -324,7 +324,7 @@ def render_rays(models,
         # deltas_coarse = self.deltas_coarse
         with torch.no_grad():
             deltas_coarse = z_vals_coarse[:, 1:] - z_vals_coarse[:, :-1] # (N_rays, N_samples_-1)
-            delta_inf = 1e10 * torch.ones_like(deltas_coarse[:, :1]) # (N_rays, 1) the last delta is infinity
+            delta_inf = 1e5 * torch.ones_like(deltas_coarse[:, :1]) # (N_rays, 1) the last delta is infinity
             deltas_coarse = torch.cat([deltas_coarse, delta_inf], -1)  # (N_rays, N_samples_)
             weights_coarse, _ = sigma2weights(deltas_coarse, sigmas)
             weights_coarse = weights_coarse.detach()
