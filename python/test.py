@@ -125,18 +125,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 '''
 dataset = dataset_dict["blender"]
 val_dataset = dataset(split='test', root_dir=hparams.root_dir, img_wh=hparams.img_wh)
-
 sample = val_dataset[0]
-
 #rays, rgbs = model.decode_batch(sample)
 rays = sample['rays'].to(device)
 #rays = rays.squeeze()
 #rgbs = rgbs.squeeze()
 '''
 
-c2w = pose_spherical(90,-30,4)
+c2w = pose_spherical(90,30,4)
 w, h = hparams.img_wh
 focal = 0.5*w/np.tan(0.5*0.6911112070083618)
+# focal = 0.5*w/np.tan(0.5*0.6)
 directions = get_ray_directions(h, w, focal)
 directions = directions / torch.norm(directions, dim=-1, keepdim=True)
 rays_o, rays_d = get_rays(directions, c2w)
@@ -207,7 +206,7 @@ system_dict['z_vals_coarse'] = z_vals_coarse.unsqueeze(0)
 system_dict['N_samples_fine'] = hparams.N_samples * hparams.N_importance
 z_vals_fine = torch.linspace(0, 1, system_dict['N_samples_fine'], device='cuda') # (N_samples_coarse)
 if not hparams.use_disp: # use linear sampling in depth space
-    z_vals_fine = near * (1-z_vals_fine) + far * z_vals_fine
+    z_vals_fine = near * (1-z_vals_fine) + far * z_vals_fine               
 else: # use linear sampling in disparity space
     z_vals_fine = 1/(1/near * (1-z_vals_fine) + 1/far * z_vals_fine)   # (N_rays, N_samples_coarse)
 system_dict['z_vals_fine'] = z_vals_fine.unsqueeze(0)
@@ -235,7 +234,7 @@ def render_rays(models,
                 noise_std=0.0,
                 N_importance=0,
                 chunk=1024*32,
-                white_back=False
+                white_back=True
                 ):
 
         def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, idx_render):
@@ -262,11 +261,11 @@ def render_rays(models,
             deg = 2
             rgb = eval_sh(deg=deg, sh=sh.reshape(-1, 3, (deg + 1)**2), dirs=view_dir)
             rgb = torch.sigmoid(rgb)
-            out = torch.cat([sigma, rgb, sh], dim=1)
+            out = torch.cat([sigma, rgb, sh], dim=-1)
            
             out_rgb = torch.full((N_rays, N_samples_, 3), 1.0, device=device)
             out_sigma = torch.full((N_rays, N_samples_, 1), system_dict['sigma_default'], device=device)
-            out_sh = torch.full((N_rays, N_samples_, system_dict['dim_sh']), 0.0, device=device)
+            out_sh = torch.full((N_rays, N_samples_, system_dict['dim_sh']), -5.0, device=device)
             out_defaults = torch.cat([out_sigma, out_rgb, out_sh], dim=2)
             out_defaults[idx_render[:, 0], idx_render[:, 1]] = out
             out = out_defaults
@@ -277,7 +276,7 @@ def render_rays(models,
                     
             # Convert these values using volume rendering (Section 4)
             deltas = z_vals[:, 1:] - z_vals[:, :-1] # (N_rays, N_samples_-1)
-            delta_inf = 1e10 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
+            delta_inf = 1e5 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
             deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
             
             weights, alphas = sigma2weights(deltas, sigmas)
@@ -324,7 +323,7 @@ def render_rays(models,
         # deltas_coarse = self.deltas_coarse
         with torch.no_grad():
             deltas_coarse = z_vals_coarse[:, 1:] - z_vals_coarse[:, :-1] # (N_rays, N_samples_-1)
-            delta_inf = 1e10 * torch.ones_like(deltas_coarse[:, :1]) # (N_rays, 1) the last delta is infinity
+            delta_inf = 1e5 * torch.ones_like(deltas_coarse[:, :1]) # (N_rays, 1) the last delta is infinity
             deltas_coarse = torch.cat([deltas_coarse, delta_inf], -1)  # (N_rays, N_samples_)
             weights_coarse, _ = sigma2weights(deltas_coarse, sigmas)
             weights_coarse = weights_coarse.detach()
@@ -420,6 +419,4 @@ W, H = hparams.img_wh
 img = results[f'rgb_{typ}'].view(H, W, 3)
 img = img.permute(2, 0, 1)
 print(time.time())
-transforms.ToPILImage()(img).convert("RGB").save('test2.png')
-
-
+transforms.ToPILImage()(img).convert("RGB").save('test_r6.png')
