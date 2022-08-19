@@ -207,11 +207,15 @@ torch::Tensor inference(torch::Tensor xyz_, torch::Tensor dir_, torch::Tensor z_
   
   // Convert these values using volume rendering (Section 4)
   auto deltas = z_vals.index({Slice(), Slice(1, None)}) - z_vals.index({Slice(), Slice(None, -1)}); // (N_rays, N_samples_-1)
-  auto delta_inf = 1e10 * torch::ones_like(deltas.index({Slice(), Slice(None, 1)})); // (N_rays, 1) the last delta is infinity
+  auto delta_inf = 1e5 * torch::ones_like(deltas.index({Slice(), Slice(None, 1)})); // (N_rays, 1) the last delta is infinity
   deltas = torch::cat({deltas, delta_inf}, -1); // (N_rays, N_samples_)
   auto weights = sigma2weights(deltas, sigmas);
+  auto weights_sum = weights.sum(1); // (N_rays)
   
   auto rgb_final = torch::sum(weights.unsqueeze(-1)*rgbs, -2); // (N_rays, 3)
+
+  // white_back = true
+  rgb_final = rgb_final + 1 - weights_sum.unsqueeze(-1);
   
   return rgb_final;
 }
@@ -252,7 +256,7 @@ torch::Tensor render_rays(torch::Tensor ray_batch, int N_samples=128, int N_impo
   auto sigmas = query_coarse_sigma(xyz_coarse).reshape({N_rays, N_samples_coarse});
   
   auto deltas_coarse = z_vals_coarse.index({Slice(), Slice(1, None)}) - z_vals_coarse.index({Slice(), Slice(None, -1)});
-  auto delta_inf = 1e10 * torch::ones_like(deltas_coarse.index({Slice(), Slice(None, 1)}));
+  auto delta_inf = 1e5 * torch::ones_like(deltas_coarse.index({Slice(), Slice(None, 1)}));
   deltas_coarse = torch::cat({deltas_coarse, delta_inf}, -1);
   auto weights_coarse = sigma2weights(deltas_coarse, sigmas);
   
